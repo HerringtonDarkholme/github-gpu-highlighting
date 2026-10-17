@@ -1,1 +1,0 @@
-Automatic syntax highlighting for code GitHub leaves plain. Runs locally with WebGPU. No language setup, uploads, or telemetry.
