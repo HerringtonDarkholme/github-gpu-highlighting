@@ -53,13 +53,11 @@ Read the [privacy policy](PRIVACY.txt) for details about local code processing, 
 
 ## How it works
 
-The extension checks whether GitHub has already colored the code. When it hasn't, a small [gpu-lexer](https://github.com/vercel-labs/gpu-lexer) model predicts syntax colors directly from the text, without needing to know its programming language. The extension applies colors as soon as the model returns, without changing the source. CSS handles the fade; there is no extra wait before applying the result.
+[gpu-lexer](https://github.com/vercel-labs/gpu-lexer) predicts syntax colors without needing a language grammar. Its bundled model runs locally on your GPU, and the extension uses it for code GitHub leaves plain.
 
-GitHub can load and remove code rows as you scroll. The extension reads the full source already present on the page and caches its token positions. Newly displayed rows reuse that result, so scrolling doesn't rerun the model or restart the fade.
+The [CSS Custom Highlight API](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API) colors existing text without rewriting GitHub's code elements. A [CSS transition](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Transitions/Using) fades colors in or out over 420 ms by default.
 
-Colors use the [CSS Custom Highlight API](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API): the model returns text ranges, and `::highlight()` styles them while GitHub keeps its own code elements. When highlighting appears, `color-mix()` blends the original text color into the syntax color. A CSS transition on each code block fades all its lines together over 420 ms by default, including lines offscreen. Scrolling does not start a new fade. Turning highlighting off fades back to the original colors before removing the highlight ranges. When GitHub replaces a code block during startup, the extension rebinds its colors to the new text nodes, preserving completed colors or continuing an active fade from the same point. Reduced-motion preferences skip the animation.
-
-The GPU model starts in a hidden background page when you visit GitHub. All GitHub tabs share it, so opening another file or reloading a page doesn't initialize the model again. Each page keeps its own cache, and a small extension memory cache preserves recent results across reloads. For an immediate same-tab reload, a one-use snapshot in the tab's session storage lets the new document restore matching colors before its first paint. The snapshot expires after five seconds; the extension memory cache clears when the browser closes. Three minutes after the last GitHub tab closes or leaves GitHub, the background page unloads to release GPU memory. Returning during that time keeps it ready; turning the extension off releases it immediately.
+Results are cached so scrolling reuses existing highlighting. GitHub tabs share one GPU runtime, which unloads after three minutes without any GitHub tabs.
 
 ## If something stays plain
 
