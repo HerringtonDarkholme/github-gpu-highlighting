@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How Universal GitHub Highlighting processes code locally and handles settings and temporary caches.">
+<meta name="color-scheme" content="light dark">
+<title>Privacy policy · Universal GitHub Highlighting</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff;color:#1f2328;line-height:1.7}
+body{margin:0}main{max-width:760px;margin:0 auto;padding:64px 24px 80px}h1{font-size:36px;line-height:1.2;letter-spacing:-1px;margin:0 0 12px}h2{font-size:21px;line-height:1.4;margin:36px 0 12px}p{margin:0 0 18px}.product{font-size:19px;margin-bottom:4px}.date{font-size:14px;color:#59636e;margin-bottom:36px}a{color:#0969da;text-underline-offset:3px}footer{margin-top:40px;border-top:1px solid #d1d9e0;padding-top:24px;font-size:14px}
+@media(prefers-color-scheme:dark){:root{background:#0d1117;color:#f0f6fc}.date{color:#9198a1}a{color:#79c0ff}footer{border-color:#30363d}}
+@media(max-width:480px){main{padding:36px 20px 56px}h1{font-size:30px}}
+</style>
+</head>
+<body><main>
+<h1>Privacy policy</h1>
+<p class="product">Universal GitHub Highlighting</p>
+<p class="date">Effective date: October 17, 2026</p>
+<p>Universal GitHub Highlighting adds syntax colors to source code on GitHub using a model that runs locally on your device.</p>
+<h2>Information handled locally</h2>
+<p>The extension reads source text already available in GitHub repository file views, supported pull request diffs, and Markdown code blocks. This may include private repository code that you can access while signed in. It uses GitHub page and tab URLs to recognize relevant pages, handle navigation, match reload snapshots, and manage the shared GPU runtime. It does not access your browser&#x27;s history database or collect activity on other websites.</p>
+<p>The source is used only to predict syntax colors. It is not executed, used to train a model, or sent to the developer or any external inference service. The model and executable code are bundled with the extension.</p>
+<h2>Settings and temporary caches</h2>
+<p>Your enabled/disabled preference and color transition duration are saved in local extension storage until changed or removed by uninstalling the extension.</p>
+<p>Recent source text and token positions may be cached in page memory and in a bounded extension browser-session cache to avoid repeated inference. The extension browser-session cache clears when the browser session ends. Individual cache entries may be replaced sooner as other code is processed.</p>
+<p>For immediate same-tab reloads, a bounded snapshot containing the page URL, source text, and token positions may be placed in that GitHub tab&#x27;s sessionStorage. It is eligible for reuse for five seconds and is removed when read by the next document. An unread snapshot can remain until the tab&#x27;s storage session ends. This page storage is part of the GitHub origin, rather than private extension storage.</p>
+<p>The GPU runtime unloads three minutes after the last GitHub tab closes or leaves GitHub, or immediately when highlighting is disabled. Unloading the GPU runtime does not itself clear all cached results. Closing the affected tabs and ending the browser session clears the temporary session caches, subject to the browser&#x27;s session-restoration behavior.</p>
+<h2>Sharing and tracking</h2>
+<p>The extension has no backend, accounts, analytics, advertising, or telemetry. It does not sell, upload, or transfer source text, URLs, or preferences to the developer or third parties. It makes no automatic network requests to external services. Opening a link from the popup or a support link is a user-directed visit governed by the destination site&#x27;s own practices.</p>
+<h2>Limited use</h2>
+<p>Data is handled solely to provide the extension&#x27;s syntax highlighting feature and its controls. It is not used for advertising, profiling, creditworthiness, or lending decisions. The extension&#x27;s use of data follows the Chrome Web Store User Data Policy, including its Limited Use requirements.</p>
+<h2>Your choices</h2>
+<p>You can disable highlighting from the popup or uninstall the extension. Turning it off stops highlighting and closes the GPU runtime; it does not erase your saved settings or necessarily remove temporary cache entries immediately.</p>
+<h2>Contact</h2>
+<p>Questions or requests can be submitted at: <a href="https://github.com/HerringtonDarkholme/github-gpu-highlighting/issues">GitHub support issues</a> Do not include private source code or other sensitive information in a public issue.</p>
+<footer><a href="https://github.com/HerringtonDarkholme/github-gpu-highlighting">Universal GitHub Highlighting on GitHub</a></footer>
+</main></body>
+</html>

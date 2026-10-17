@@ -1,0 +1,14 @@
+{
+  "url": "https://github.com/HerringtonDarkholme/hd-lang/blob/main/lib/std/json.hd",
+  "sourcePreserved": true,
+  "automaticHighlighting": true,
+  "theme": "dark",
+  "clip": {
+    "x": 360,
+    "y": 170,
+    "width": 900,
+    "height": 480
+  },
+  "deviceScaleFactor": 2,
+  "note": "Same page, crop, and source; only the extension toggle changed."
+}

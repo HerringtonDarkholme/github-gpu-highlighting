@@ -1,0 +1,39 @@
+CHROME WEB STORE — PRIVACY PRACTICES
+
+Single purpose description
+Automatically add local, language-agnostic syntax highlighting to source code on GitHub when GitHub has not provided meaningful highlighting, while preserving existing highlighting and GitHub interactions by default.
+
+alarms justification
+Schedules a one-time idle cleanup three minutes after the last GitHub tab closes or navigates away. The alarm closes the offscreen WebGPU runtime to release GPU memory, including when the extension service worker has been suspended.
+
+Host permissions justification
+Access is limited to https://github.com/*. The extension reads source text already present in repository file views, supported pull request diffs, and Markdown code blocks, detects existing syntax highlighting, and applies visual text-range colors. It also uses GitHub tab URLs to manage navigation, popup controls, and the shared GPU runtime. Code and URLs are processed locally and are not uploaded.
+
+offscreen justification
+Hosts a bundled WebGPU lexer worker in a hidden extension document. This lets GitHub tabs share one initialized local model across navigation and reloads instead of initializing a separate model for every page. The document closes after three minutes without a GitHub tab, or immediately when highlighting is disabled.
+
+Remote code
+Select: No, I am not using remote code.
+If the dashboard still requests explanatory text:
+All executable JavaScript, the gpu-lexer model, and GPU shader code are bundled in the extension package. The extension does not download or execute remote scripts, modules, or models. GitHub source text is read only as input for local syntax classification; it is never executed.
+
+storage justification
+Saves the enabled/disabled preference and color transition duration in chrome.storage.local. Uses chrome.storage.session for a small browser-session cache of recent source text and token offsets so reloads can reuse highlighting without another inference. A bounded, one-use same-tab reload snapshot also uses GitHub page sessionStorage and is eligible for reuse for five seconds. These caches stay on the device and are not uploaded.
+
+Data usage
+Disclose Website content: GitHub source code is read and temporarily cached locally for highlighting.
+Disclose Web history: GitHub tab/page URLs are used locally for navigation, matching a reload snapshot, and managing runtime lifecycle. No browsing-history database is accessed or created, and activity on other websites is not collected.
+Other categories: do not select categories the extension does not access. It does not intentionally extract identity, financial, health, authentication, personal communication, location, or interaction analytics data. Source text can contain arbitrary content; it is processed only as code for the requested highlighting feature.
+
+Certifications
+The current implementation does not sell or transfer user data, use data outside its single purpose, or use it for creditworthiness or lending decisions. Review and check the corresponding certifications yourself as the publisher.
+
+Privacy policy
+Publish privacy-policy.txt at a publicly accessible URL and enter that URL in the dashboard. Do not use a local file:/// URL.
+
+Publisher contact
+On the dashboard Settings page, provide your own contact email and complete email verification. Then return to Privacy practices and Save Draft.
+
+Reference
+https://developer.chrome.com/docs/webstore/cws-dashboard-privacy
+https://developer.chrome.com/docs/webstore/program-policies/user-data-faq

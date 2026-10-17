@@ -3,3 +3,6 @@ dist/
 test-results/
 playwright-report/
 .DS_Store
+.crx-signing/
+*.crx
+github-gpu-highlighting-*.zip

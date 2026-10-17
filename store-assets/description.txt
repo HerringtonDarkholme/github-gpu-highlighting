@@ -1,0 +1,27 @@
+Syntax highlighting for the languages GitHub doesn't recognize yet.
+
+Reading an experimental language, building your own, or exploring AI-generated code? Universal GitHub Highlighting adds syntax colors automatically when GitHub leaves source code plain. No language selection, custom grammars, or configuration needed.
+
+BUILT FOR GITHUB
+• Automatically highlights uncolored repository files, supported pull request diffs, and Markdown code blocks.
+• Preserves GitHub's existing syntax highlighting by default.
+• Follows your light or dark theme.
+• Keeps line links, text selection, copying, and GitHub's code elements intact.
+• Reuses cached colors as you scroll and navigate between files.
+
+SMALL POPUP, SIMPLE CONTROLS
+Turn highlighting on or off, force highlighting for an individual file, or adjust the CSS color fade. The default transition is 420 ms; set it to 0 for instant colors.
+
+YOUR CODE STAYS ON YOUR DEVICE
+A small gpu-lexer model runs locally using WebGPU. The model is bundled with the extension. No source-code uploads, external inference services, accounts, analytics, or telemetry.
+
+The GPU runtime is shared across GitHub tabs and unloads three minutes after the last GitHub tab closes or leaves GitHub.
+
+GOOD TO KNOW
+Requires a recent desktop Chrome with WebGPU support. The first file may take a moment while the GPU starts. If WebGPU is unavailable, GitHub's original rendering stays intact. Very large files are skipped, and some GitHub diff layouts may not be supported. Model-predicted colors can occasionally be imperfect.
+
+Powered by gpu-lexer. Open source under the MIT license.
+
+Source and support: https://github.com/HerringtonDarkholme/github-gpu-highlighting
+
+An independent extension, not affiliated with or endorsed by GitHub.
