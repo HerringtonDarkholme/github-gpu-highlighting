@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; font: 13px/1.5 system-ui, sans-serif; }
+body { width: 330px; margin: 16px; }
+h1 { font-size: 16px; margin: 0 0 12px; }
+.toggle { display: flex; align-items: center; gap: 8px; }
+#availability, .hint, small { color: GrayText; }
+.file { border-top: 1px solid GrayText; padding: 10px 0; }
+.name { overflow-wrap: anywhere; }
+.actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 5px; }
+button { cursor: pointer; padding: 4px 9px; }
+button:disabled { cursor: default; }

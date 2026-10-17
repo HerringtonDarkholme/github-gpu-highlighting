@@ -1,0 +1,33 @@
+{
+  "name": "github-gpu-highlighting",
+  "version": "1.0.0",
+  "description": "Offline WebGPU syntax highlighting for source code GitHub leaves uncolored",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && playwright test",
+    "check": "npm run typecheck && npm test",
+    "verify:live": "npm run build && node scripts/verify-live.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HerringtonDarkholme/github-gpu-highlighting.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/HerringtonDarkholme/github-gpu-highlighting/issues"
+  },
+  "homepage": "https://github.com/HerringtonDarkholme/github-gpu-highlighting#readme",
+  "dependencies": {
+    "gpu-lexer": "0.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/chrome": "^0.3.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,10 @@
+/* Only foreground colors. Never touch GitHub's diff/search/selection backgrounds. */
+::highlight(ugh-plain) { color: var(--fgColor-default, var(--color-fg-default, #1f2328)); }
+::highlight(ugh-comment) { color: var(--color-prettylights-syntax-comment, var(--fgColor-muted, #59636e)); }
+::highlight(ugh-string) { color: var(--color-prettylights-syntax-string, #0a3069); }
+::highlight(ugh-number) { color: var(--color-prettylights-syntax-constant, #0550ae); }
+::highlight(ugh-keyword) { color: var(--color-prettylights-syntax-keyword, #cf222e); }
+::highlight(ugh-type) { color: var(--color-prettylights-syntax-entity, #6639ba); }
+::highlight(ugh-function) { color: var(--color-prettylights-syntax-entity, #6639ba); }
+::highlight(ugh-constant) { color: var(--color-prettylights-syntax-constant, #0550ae); }
+::highlight(ugh-operator) { color: var(--color-prettylights-syntax-keyword, #cf222e); }
