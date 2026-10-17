@@ -84,6 +84,26 @@ test.describe('packaged MV3 extension', () => {
     expect(external).toEqual([]);
   });
 
+  test('model results paint before a slow session-cache write finishes', async () => {
+    const worker = await background();
+    await worker.evaluate(() => {
+      const original = chrome.storage.session.set.bind(chrome.storage.session);
+      const held = new Promise<void>(resolve => { (globalThis as any).releaseCacheWrite = resolve; });
+      chrome.storage.session.set = async items => {
+        (globalThis as any).cacheWriteWaiting = true;
+        await held;
+        await original(items);
+      };
+    });
+    await page.goto('https://github.com/test/repo/blob/main/immediate.invented');
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size), { timeout: 25_000 }).toBeGreaterThan(0);
+    expect(await worker.evaluate(() => (globalThis as any).cacheWriteWaiting)).toBe(true);
+    expect(await worker.evaluate(async () => (await chrome.storage.session.get('recentHighlights')).recentHighlights)).toBeUndefined();
+    await worker.evaluate(() => (globalThis as any).releaseCacheWrite());
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.session.get('recentHighlights')).recentHighlights?.length ?? 0)).toBeGreaterThan(0);
+    expect(external).toEqual([]);
+  });
+
   test('the packaged extension paints a gradual fade under restrictive CSP', async () => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     // Pause the real content-script animations at their first paint so pixel
@@ -162,6 +182,61 @@ test.describe('packaged MV3 extension', () => {
     expect(restored[0].equals(restored[1])).toBe(false);
     expect(restored[1].equals(restored[2])).toBe(false);
     expect(await page.locator('.react-code-lines').innerHTML()).toBe(before);
+  });
+
+  test('popup transition duration persists and updates open GitHub pages without a reload', async () => {
+    await page.goto('https://github.com/test/repo/blob/main/preferences.invented');
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size), { timeout: 25_000 }).toBeGreaterThan(1);
+    await expect(page.locator('[data-ugh-fade]')).toHaveCount(0);
+    await openPopup();
+    const duration = popup.getByLabel('Transition time');
+    await expect(duration).toHaveValue('420');
+    expect(await popup.locator('.animation input').count()).toBe(1);
+    await duration.fill('800'); await duration.blur();
+    const worker = await background();
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.local.get('animation')).animation)).toEqual({ durationMs: 800 });
+    await popup.reload();
+    await expect(duration).toHaveValue('800');
+    await popup.screenshot({ path: 'test-results/popup-animation-light.png' });
+    await popup.emulateMedia({ colorScheme: 'dark' });
+    await popup.screenshot({ path: 'test-results/popup-animation-dark.png' });
+    const pauseNext = () => {
+      const pause = () => {
+        const clocks = document.getAnimations();
+        if (!clocks.length) { requestAnimationFrame(pause); return; }
+        for (const clock of clocks) { clock.pause(); clock.currentTime = 0; }
+      }; requestAnimationFrame(pause);
+    };
+    await page.evaluate(pauseNext);
+    await popup.getByLabel('Enable automatic highlighting').uncheck();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(clock => clock.playState === 'paused').length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.getAnimations().map(clock => clock.effect!.getTiming().duration))).toEqual([800, 800, 800]);
+    await page.evaluate(() => { for (const clock of document.getAnimations()) clock.finish(); });
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(0);
+    await page.evaluate(pauseNext);
+    await popup.getByLabel('Enable automatic highlighting').check();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(clock => clock.playState === 'paused').length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.getAnimations().map(clock => clock.effect!.getTiming().duration))).toEqual([800, 800, 800]);
+    await page.evaluate(() => { for (const clock of document.getAnimations()) clock.finish(); });
+    await expect(page.locator('[data-ugh-fade]')).toHaveCount(0);
+    // A new document reads the same preferences through background bootstrap.
+    await page.addInitScript(pauseNext);
+    await page.goto('https://github.com/test/repo/blob/main/preferences-next.invented');
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(clock => clock.playState === 'paused').length), { timeout: 25_000 }).toBeGreaterThan(0);
+    expect(await page.evaluate(() => document.getAnimations()[0].effect!.getTiming().duration)).toBe(800);
+    await page.evaluate(() => { for (const clock of document.getAnimations()) clock.finish(); });
+    await expect(page.locator('[data-ugh-fade]')).toHaveCount(0);
+    await duration.fill('0'); await duration.blur();
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.local.get('animation')).animation.durationMs)).toBe(0);
+    await popup.getByLabel('Enable automatic highlighting').uncheck();
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(0);
+    await popup.getByLabel('Enable automatic highlighting').check();
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBeGreaterThan(1);
+    expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+    expect(await page.locator('[data-ugh-fade], [style*="--ugh-"]').count()).toBe(0);
+    await duration.fill('5000'); await duration.blur();
+    await expect.poll(() => worker.evaluate(async () => (await chrome.storage.local.get('animation')).animation)).toEqual({ durationMs: 5000 });
+    expect(external).toEqual([]);
   });
 
   test('reload restores cached colors before any plain-code compositor frame', async () => {

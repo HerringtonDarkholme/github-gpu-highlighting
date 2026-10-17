@@ -1,6 +1,7 @@
+import { animationSettings, DEFAULT_ANIMATION, type AnimationSettings } from './animation-settings';
+
 // One CSS transition per code surface, including offscreen lines. Scrolling
 // never starts or restarts a reveal; JavaScript only changes its endpoints.
-const DURATION_MS = 420;
 const ATTRIBUTE = 'data-ugh-fade';
 const PROGRESS = '--ugh-reveal';
 const DURATION = '--ugh-fade-duration';
@@ -15,12 +16,15 @@ interface Job {
   target: number;
   started: number;
   duration: number;
+  durationMs: number;
   saved: Saved[];
   timer?: ReturnType<typeof setTimeout>;
   finish: () => void;
 }
 
 export class Reveal {
+  private settings: AnimationSettings = { ...DEFAULT_ANIMATION };
+  configure(settings: AnimationSettings): void { this.settings = animationSettings(settings); }
   private active = new Map<Element, Job>();
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private scheme = matchMedia('(prefers-color-scheme: dark)');
@@ -38,10 +42,11 @@ export class Reveal {
 
   private begin(root: Element, lines: Element[], target: number, done?: () => void): void {
     const previous = this.active.get(root);
+    const durationMs = previous?.durationMs ?? this.settings.durationMs;
     const from = previous ? this.progress(previous) : target === 1 ? 0 : 1;
     this.cancel(root);
     if (!root.isConnected || !(root instanceof HTMLElement || root instanceof SVGElement)
-      || this.reduced.matches || document.visibilityState === 'hidden'
+      || !durationMs || this.reduced.matches || document.visibilityState === 'hidden'
       || typeof CSS.registerProperty !== 'function'
       || !CSS.supports('color', 'color-mix(in srgb, black, white)') || Math.abs(target - from) < 0.001) {
       done?.(); return;
@@ -75,7 +80,7 @@ export class Reveal {
       values: PROPERTIES.map(property => [property, element.style.getPropertyValue(property), element.style.getPropertyPriority(property)] as [string, string, string]),
     }));
     for (const [element, color] of origins) element.style.setProperty(COLOR, color);
-    const duration = DURATION_MS * Math.abs(target - from);
+    const duration = durationMs * Math.abs(target - from);
     root.setAttribute(ATTRIBUTE, 'prepare');
     root.style.setProperty(PROGRESS, String(from));
     root.style.setProperty(DURATION, `${duration}ms`);
@@ -86,7 +91,7 @@ export class Reveal {
     root.style.setProperty(PROGRESS, String(target));
     getComputedStyle(root).getPropertyValue(PROGRESS);
 
-    const job: Job = { root, element: root, from, target, started: performance.now(), duration, saved, finish: () => {} };
+    const job: Job = { root, element: root, from, target, started: performance.now(), duration, durationMs, saved, finish: () => {} };
     job.finish = () => {
       if (this.active.get(job.root) !== job) return;
       // Remove highlight ranges before restoring default progress after a

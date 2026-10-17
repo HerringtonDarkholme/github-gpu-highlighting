@@ -2,6 +2,10 @@
 body { width: 330px; margin: 16px; }
 h1 { font-size: 16px; margin: 0 0 12px; }
 .toggle { display: flex; align-items: center; gap: 8px; }
+.animation { margin: 14px 0; padding: 8px 12px; border: 1px solid GrayText; border-radius: 6px; }
+.animation label { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; }
+.animation input { width: 65px; padding: 3px 5px; font: inherit; }
+.animation .hint { font-size: 11px; margin: 8px 0 2px; }
 #availability, .hint, small { color: GrayText; }
 .file { border-top: 1px solid GrayText; padding: 10px 0; }
 .name { overflow-wrap: anywhere; }

@@ -1,5 +1,6 @@
 import { TOKEN_TYPES, type Line, type Span, type TokenType } from './types';
 import { Reveal } from './reveal';
+import type { AnimationSettings } from './animation-settings';
 import type { FileSource } from './file-source';
 
 interface Piece { node: Text; start: number; end: number; paint: boolean }
@@ -96,6 +97,7 @@ export class Painter {
   private layers = new Map<Element, Ranges>();
   private lines = new Map<Element, Element[]>();
   private reveal = new Reveal();
+  configure(settings: AnimationSettings): void { this.reveal.configure(settings); }
   supported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined';
 
   set(root: Element, ranges: Ranges, revealLines?: Element[], animate = true): void {

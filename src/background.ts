@@ -1,5 +1,6 @@
 import { IDLE_ALARM, isGitHub, RuntimeHost } from './runtime-host';
 import { readResults, rememberResult } from './result-cache';
+import { animationSettings } from './animation-settings';
 
 const host = new RuntimeHost();
 const sync = () => { void host.sync().catch(() => {}); };
@@ -19,14 +20,15 @@ chrome.alarms.onAlarm.addListener(alarm => {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.target !== 'background') return;
   if (message.type === 'bootstrap' && sender.tab && isGitHub(sender.url)) {
-    void Promise.all([chrome.storage.local.get('enabled'), readResults()]).then(([settings, cache]) => {
-      respond({ enabled: settings.enabled !== false, cache });
-    }, () => respond({ enabled: true, cache: [] }));
+    void Promise.all([chrome.storage.local.get(['enabled', 'animation']), readResults()]).then(([settings, cache]) => {
+      respond({ enabled: settings.enabled !== false, cache, animation: animationSettings(settings.animation) });
+    }, () => respond({ enabled: true, cache: [], animation: animationSettings(undefined) }));
     return true;
   }
   if (message.type !== 'parse') return;
-  void host.parse(message.source, sender).then(async reply => {
-    if (reply.spans) await rememberResult({ source: message.source, spans: reply.spans });
+  void host.parse(message.source, sender).then(reply => {
+    // Cache persistence must not delay delivery to the page.
+    if (reply.spans) void rememberResult({ source: message.source, spans: reply.spans });
     respond(reply);
   });
   return true;

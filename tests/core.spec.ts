@@ -381,6 +381,37 @@ test('cached source replacement repaints synchronously without waiting for the q
   expect(result).toEqual({ state: 'Highlighted', calls: 0, attached: true });
 });
 
+test('code is inferred and painted while the document loads, without advancing timers or frames', async ({ page }) => {
+  await page.clock.install();
+  const result = await page.evaluate(async () => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    Object.defineProperty(document, 'readyState', { configurable: true, get: () => 'loading' });
+    const api = (window as any).testApi;
+    api.start();
+    // Drain promises, without advancing the paused browser clock.
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    return { calls: api.calls(), state: api.controller().status().files[0].state,
+      painted: CSS.highlights.has('ugh-keyword') };
+  });
+  expect(result).toEqual({ calls: ['invent greet(name) => "hello 😀"\nyield 42 + name'], state: 'Highlighted', painted: true });
+});
+
+test('newly inserted code is inferred and painted in the same checkpoint without a frame delay', async ({ page }) => {
+  await page.clock.install();
+  const result = await page.evaluate(async () => {
+    const scope = document.querySelector('#repo-content-pjax-container')!;
+    scope.replaceChildren();
+    const api = (window as any).testApi;
+    api.start();
+    const article = document.createElement('article'); article.className = 'markdown-body';
+    const code = document.createElement('pre'); code.textContent = 'invent immediately'; article.append(code); scope.append(article);
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    return { calls: api.calls(), state: api.controller().status().files[0]?.state,
+      painted: CSS.highlights.has('ugh-keyword') };
+  });
+  expect(result).toEqual({ calls: ['invent immediately'], state: 'Highlighted', painted: true });
+});
+
 test('continuous source mutations cannot keep postponing highlighting', async ({ page }) => {
   await page.clock.install();
   await page.evaluate(() => {
@@ -516,7 +547,7 @@ test('client navigation uses the full read-only textarea when initial embedded d
     document.dispatchEvent(new Event('soft-nav:end'));
     return rawLines.join('\n');
   });
-  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0]?.state)).toBe('Highlighted');
   expect(await page.evaluate(() => (window as any).testApi.calls()[1])).toBe(source);
   const result = await page.evaluate(async () => {
     const rows = (window as any).virtualRows as Element[], root = document.querySelector('.react-code-lines')!;

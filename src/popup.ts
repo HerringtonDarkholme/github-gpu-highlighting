@@ -1,8 +1,21 @@
 import type { Status } from './types';
+import { animationSettings } from './animation-settings';
 
 const enabled = document.querySelector<HTMLInputElement>('#enabled')!;
 const availability = document.querySelector<HTMLElement>('#availability')!;
 const files = document.querySelector<HTMLElement>('#files')!;
+const duration = document.querySelector<HTMLInputElement>('#duration')!;
+let animationEdited = false;
+function showAnimation(value: unknown): void {
+  const settings = animationSettings(value);
+  duration.value = String(settings.durationMs);
+}
+duration.addEventListener('change', () => {
+  animationEdited = true;
+  const settings = animationSettings({ durationMs: duration.valueAsNumber });
+  showAnimation(settings);
+  void chrome.storage.local.set({ animation: settings });
+});
 let tabId: number | undefined;
 let request = 0;
 
@@ -40,7 +53,8 @@ enabled.addEventListener('change', async () => {
   await refresh();
 });
 void (async () => {
-  const value = await chrome.storage.local.get('enabled');
+  const value = await chrome.storage.local.get(['enabled', 'animation']);
+  if (!animationEdited) showAnimation(value.animation);
   enabled.checked = value.enabled !== false;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab?.id;

@@ -6,6 +6,11 @@
 <body>
   <h1>GitHub highlighting</h1>
   <label class="toggle"><input id="enabled" type="checkbox" checked> Enable automatic highlighting</label>
+  <fieldset class="animation">
+    <legend>Animation</legend>
+    <label for="duration">Transition time <span><input id="duration" type="number" min="0" step="10" value="420"> ms</span></label>
+    <p class="hint">Set to 0 for instant colors. Applies to the next transition.</p>
+  </fieldset>
   <p id="availability" role="status">Checking this tab…</p>
   <div id="files"></div>
   <p class="hint">Force applies to this file until you navigate away. Processing stays on your device.</p>

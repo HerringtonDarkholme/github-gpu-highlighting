@@ -3,6 +3,7 @@ import { Lexer, MAX_SOURCE } from './lexer';
 import { isCurrent, makeRanges, Painter, snapshot, snapshotFile, type Snapshot, type Ranges } from './render';
 import { embeddedFileSource, renderedFileSource, fileSource, type FileSource } from './file-source';
 import type { Span, Status, Surface } from './types';
+import type { AnimationSettings } from './animation-settings';
 
 interface RecordState {
   id: number;
@@ -11,7 +12,6 @@ interface RecordState {
   forced: boolean;
   state: string;
   revision: number;
-  waitingForDocument?: boolean;
 }
 const PAGE_BUDGET = 240_000;
 const surfaceSize = (surface: Surface) => surface.groups.reduce((total, group) => total
@@ -24,7 +24,7 @@ export class Controller {
   private nextId = 1;
   private route = location.pathname + location.search;
   private generation = 0;
-  private frame?: number;
+  private scheduled?: object;
   private observer?: MutationObserver;
   private containers?: MutationObserver;
   private scope?: Element | Document;
@@ -34,6 +34,7 @@ export class Controller {
   private queue: Promise<unknown> = Promise.resolve();
   private events = ['DOMContentLoaded', 'readystatechange', 'turbo:load', 'turbo:render', 'pjax:end', 'soft-nav:end'];
   constructor(private lexer = new Lexer(), private painter = new Painter()) {}
+  setAnimation(settings: AnimationSettings): void { this.painter.configure(settings); }
 
   start(enabled = true): void {
     this.enabled = enabled;
@@ -147,8 +148,8 @@ export class Controller {
   }
 
   private schedule(): void {
-    // Coalesce a burst before the next paint without postponing work when more
-    // mutations arrive. Cached ranges can be restored in this same frame.
+    // MutationObserver already batches DOM commits. Finish discovery in the
+    // same microtask checkpoint, without waiting for a frame or settling timer.
     if (this.stopped || !this.enabled) return;
     if (this.fileSource && this.lexer.cached(this.fileSource.text)) {
       // Virtualized rows can be inserted inside GitHub's own animation-frame
@@ -156,13 +157,13 @@ export class Controller {
       // already batches that commit, so bind completed ranges before paint.
       this.scan(); return;
     }
-    if (this.frame !== undefined) return;
-    this.frame = requestAnimationFrame(() => { this.frame = undefined; this.scan(); });
+    if (this.scheduled) return;
+    const scheduled = this.scheduled = {};
+    queueMicrotask(() => { if (this.scheduled === scheduled) this.scan(); });
   }
 
   private cancelScheduled(): void {
-    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
-    this.frame = undefined;
+    this.scheduled = undefined;
   }
 
   // Public for deterministic integration testing; normal updates are batched.
@@ -225,16 +226,13 @@ export class Controller {
           && s.lines.length === previous.lines.length && s.lines.every((line, j) => line.element === previous.lines[j].element)
           && s.pieces.every((p, j) => p.node === previous.pieces[j].node && p.paint === previous.pieces[j].paint);
       });
-      if (unchanged && !(record.waitingForDocument && document.readyState !== 'loading')) continue;
+      if (unchanged) continue;
       // A React rerender of identical source should resume an active fade,
       // rather than canceling it and jumping straight to the final colors.
       if (!sameSource && record.snapshots.length) this.painter.remove(surface.root);
       record.snapshots = snapshots;
       record.revision++;
       record.state = 'Pending';
-      record.waitingForDocument = document.readyState === 'loading'
-        && !snapshots.every(value => this.lexer.cached(value.source));
-      if (record.waitingForDocument) continue;
       this.enqueue(record, !sameSource);
     }
     for (const [root] of this.records) {
@@ -265,9 +263,6 @@ export class Controller {
       try {
         const results: Span[][] = [];
         for (const value of record.snapshots) {
-          if (!current()) return;
-          // Yield before the package's synchronous source preparation.
-          await new Promise(resolve => setTimeout(resolve, 0));
           if (!current()) return;
           const spans = await this.lexer.parse(value.source);
           if (!current()) return;
