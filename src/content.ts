@@ -46,4 +46,8 @@ chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     controller.force(message.id);
     respond(controller.status());
   }
+  if (message?.type === 'unforce' && Number.isInteger(message.id)) {
+    controller.unforce(message.id);
+    respond(controller.status());
+  }
 });

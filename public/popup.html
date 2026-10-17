@@ -1,19 +1,39 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GitHub highlighting</title>
 <link rel="stylesheet" href="popup.css">
 <body>
-  <h1>GitHub highlighting</h1>
-  <label class="toggle"><input id="enabled" type="checkbox" checked> Enable automatic highlighting</label>
-  <fieldset class="animation">
-    <legend>Animation</legend>
-    <label for="duration">Transition time <span><input id="duration" type="number" min="0" step="10" value="420"> ms</span></label>
-    <p class="hint">Set to 0 for instant colors. Applies to the next transition.</p>
-  </fieldset>
-  <p id="availability" role="status">Checking this tab…</p>
-  <div id="files"></div>
-  <p class="hint">Force applies to this file until you navigate away. Processing stays on your device.</p>
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg width="36" height="36" viewBox="0 0 40 40" fill="none" stroke="var(--border)" stroke-width="2" stroke-linecap="round"><path d="M14 2v4M20 2v4M26 2v4M14 34v4M20 34v4M26 34v4M2 14h4M2 20h4M2 26h4M34 14h4M34 20h4M34 26h4"/></svg>
+      <div class="logo-border spin"><div class="logo-center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></div></div>
+    </div>
+    <div class="heading"><h1>GitHub highlighting</h1><p>For unsupported languages</p></div>
+    <label class="toggle"><span id="enabled-label">On</span><span class="switch">
+      <input id="enabled" type="checkbox" aria-label="Enable automatic highlighting" checked>
+      <span class="switch-border spin" aria-hidden="true"><span class="switch-mask"></span><span class="switch-track"><span class="switch-knob"></span></span></span>
+    </span></label>
+  </header>
+  <main>
+    <div id="files"></div>
+    <p id="empty" class="empty" hidden>No supported code blocks on this page.</p>
+    <div class="animation">
+      <div class="setting-label"><label for="duration">Color transition</label><p>Use 0 for instant colors.</p></div>
+      <div class="number-field"><input id="duration" type="number" min="0" step="10" value="420"><span>ms</span></div>
+    </div>
+  </main>
+  <footer>
+    <div class="runtime" role="status"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2M9.5 1.5v2M6.5 12.5v2M9.5 12.5v2M1.5 6.5h2M1.5 9.5h2M12.5 6.5h2M12.5 9.5h2"/></svg><span id="availability">Checking this tab…</span></div>
+    <a href="https://gpu-lexer.vercel.app/" target="_blank" rel="noopener noreferrer">How it works<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5v9h9V10M9 3h4v4M13 3L7.5 8.5"/></svg></a>
+  </footer>
+  <template id="file-template">
+    <section class="file">
+      <div class="file-header"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3.5 1.5h6l3 3v9.5a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5z"/><path d="M9.5 1.5v3h3"/></svg><div class="name"></div><span class="badge" role="status" aria-atomic="true"><small class="sr-only"></small><span data-state="highlighted" aria-hidden="true">Highlighted</span><span data-state="forced" aria-hidden="true">Forced</span><span data-state="off" aria-hidden="true">Off</span><span data-state="pending" aria-hidden="true">Pending</span><span data-state="native" aria-hidden="true">GitHub</span><span data-state="unavailable" aria-hidden="true">Unavailable</span><span data-state="skipped" aria-hidden="true">Size limit</span></span></div>
+      <div class="file-body"><button type="button" class="btn">Force highlight</button><p>Applies to this file until you navigate away.</p></div>
+    </section>
+  </template>
   <script src="popup.js"></script>
 </body>
 </html>

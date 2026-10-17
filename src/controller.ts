@@ -91,6 +91,18 @@ export class Controller {
     this.enqueue(record, hasSyntax(record.surface));
   }
 
+  unforce(id: number): void {
+    const record = [...this.records.values()].find(record => record.id === id);
+    if (!record?.forced || !this.enabled || !record.surface.root.isConnected) return;
+    record.forced = false;
+    if (hasSyntax(record.surface)) {
+      record.revision++;
+      record.snapshots = [];
+      record.state = 'GitHub highlighting';
+      this.painter.remove(record.surface.root);
+    } else if (record.state === 'Force highlighted') record.state = 'Highlighted';
+  }
+
   status(): Status {
     return {
       enabled: this.enabled,

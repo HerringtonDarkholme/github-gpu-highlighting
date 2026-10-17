@@ -131,6 +131,27 @@ test('native syntax arriving late removes extension paint; force can override it
   await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Force highlighted');
 });
 
+test('stopping force restores native highlighting and leaves automatic highlighting intact', async ({ page }) => {
+  await page.evaluate(() => (window as any).testApi.start());
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  const result = await page.evaluate(async () => {
+    const api = (window as any).testApi, controller = api.controller();
+    const native = controller.status().files.find((file: any) => file.state === 'GitHub highlighting');
+    controller.force(native.id);
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    const forced = controller.status().files.find((file: any) => file.id === native.id).state;
+    controller.unforce(native.id);
+    const original = document.querySelector('.markdown-body .highlight')!;
+    const nativePainted = [...CSS.highlights].some(([, ranges]) => [...ranges].some(range => original.contains(range.startContainer)));
+    const automatic = controller.status().files[0], calls = api.calls().length;
+    controller.force(automatic.id);
+    controller.unforce(automatic.id);
+    return { forced, native: controller.status().files.find((file: any) => file.id === native.id).state,
+      nativePainted, automatic: controller.status().files[0].state, calls: api.calls().length - calls };
+  });
+  expect(result).toEqual({ forced: 'Force highlighted', native: 'GitHub highlighting', nativePainted: false, automatic: 'Highlighted', calls: 0 });
+});
+
 test('navigation drops forced state and stale async results; dynamic Markdown is discovered', async ({ page }) => {
   await page.evaluate(() => (window as any).testApi.start({ delay: true }));
   await expect.poll(() => page.evaluate(() => (window as any).testApi.calls().length)).toBe(1);

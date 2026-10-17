@@ -31,7 +31,7 @@ Browse GitHub as usual. Highlighting works in repository files, pull request dif
 
 Click the extension's icon to turn highlighting on or off for all GitHub tabs. If a file stays plain, choose **Force highlight** next to it in the popup. That choice lasts until you navigate away or turn the extension off, and can override GitHub's colors for that file.
 
-Adjust **Transition time** in the popup to change the color fade duration (420 ms by default). Set it to 0 for instant colors. The setting is saved for all GitHub tabs and applies to the next transition.
+Adjust **Color transition** in the popup to change the color fade duration (420 ms by default). Set it to 0 for instant colors. The setting is saved for all GitHub tabs and applies to the next transition. Choose **Stop forcing** to return a file to automatic highlighting.
 
 ## Your code stays on your device
 

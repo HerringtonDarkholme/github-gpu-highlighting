@@ -74,6 +74,9 @@ test.describe('packaged MV3 extension', () => {
     expect(dark).not.toBe(light);
     await popup.locator('.file').last().getByRole('button').click();
     await expect(popup.locator('.file small').last()).toHaveText('Force highlighted');
+    await popup.locator('.file').last().getByRole('button', { name: 'Stop forcing' }).click();
+    await expect(popup.locator('.file small').last()).toHaveText('GitHub highlighting');
+    expect(await page.locator('.markdown-body .highlight').innerHTML()).toBe(nativeBefore);
     await popup.getByLabel('Enable automatic highlighting').uncheck();
     await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(0);
     await expect.poll(async () => (await offscreenContexts()).length).toBe(0);
@@ -189,7 +192,7 @@ test.describe('packaged MV3 extension', () => {
     await expect.poll(() => page.evaluate(() => CSS.highlights.size), { timeout: 25_000 }).toBeGreaterThan(1);
     await expect(page.locator('[data-ugh-fade]')).toHaveCount(0);
     await openPopup();
-    const duration = popup.getByLabel('Transition time');
+    const duration = popup.getByLabel('Color transition');
     await expect(duration).toHaveValue('420');
     expect(await popup.locator('.animation input').count()).toBe(1);
     await duration.fill('800'); await duration.blur();
