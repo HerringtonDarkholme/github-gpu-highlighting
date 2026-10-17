@@ -84,6 +84,234 @@ test.describe('packaged MV3 extension', () => {
     expect(external).toEqual([]);
   });
 
+  test('the packaged extension paints a gradual fade under restrictive CSP', async () => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    // Pause the real content-script animations at their first paint so pixel
+    // comparisons do not depend on GPU startup speed or machine scheduling.
+    const pauseNextReveal = () => {
+      const pauseReveal = () => {
+        const animations = document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal');
+        if (!animations.length) { requestAnimationFrame(pauseReveal); return; }
+        for (const animation of animations) { animation.pause(); animation.currentTime = 0; }
+      };
+      requestAnimationFrame(pauseReveal);
+    };
+    await page.addInitScript(pauseNextReveal);
+    await page.goto('https://github.com/test/repo/blob/main/fade.invented');
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal' && a.playState === 'paused').length), { timeout: 25_000 }).toBeGreaterThan(0);
+    const before = await page.locator('.react-code-lines').innerHTML();
+    const clip = (await page.locator('#LC1').boundingBox())!;
+    const pixels = [];
+    const progress = [];
+    for (const time of [0, 100, 210, 420]) {
+      progress.push(await page.evaluate(time => {
+        for (const animation of document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal')) animation.currentTime = time;
+        return Number(getComputedStyle(document.querySelector('#LC1')!).getPropertyValue('--ugh-reveal'));
+      }, time));
+      pixels.push(await page.screenshot({ clip, path: `test-results/fade-${time}.png` }));
+    }
+    expect(progress[0]).toBe(0);
+    expect(progress[1]).toBeGreaterThan(0);
+    expect(progress[1]).toBeCloseTo(100 / 420, 2);
+    expect(progress[2]).toBeCloseTo(0.5, 1);
+    expect(progress[3]).toBe(1);
+    expect(pixels[0].equals(pixels[1])).toBe(false);
+    expect(pixels[1].equals(pixels[2])).toBe(false);
+    expect(pixels[2].equals(pixels[3])).toBe(false);
+    expect(await page.locator('.react-code-lines').innerHTML()).toBe(before);
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal')) animation.finish();
+    });
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal').length)).toBe(0);
+    const highlighted = await page.screenshot({ clip });
+    // GitHub replaces its server-rendered root during hydration. Identical
+    // source must retain its completed colors instead of starting a second fade.
+    await page.locator('.react-code-lines').evaluate(root => root.replaceWith(root.cloneNode(true)));
+    await expect.poll(() => page.evaluate(() => [...CSS.highlights.get('ugh-keyword')!].every(range => range.startContainer.isConnected))).toBe(true);
+    expect(await page.screenshot({ clip })).toEqual(highlighted);
+    expect(await page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal').length)).toBe(0);
+    // The popup's off/on path uses completed page cache, which must still fade
+    // when restoring colors over plain text that the user has already seen.
+    await openPopup();
+    await page.evaluate(pauseNextReveal);
+    await popup.getByLabel('Enable automatic highlighting').uncheck();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal' && a.playState === 'paused').length)).toBeGreaterThan(0);
+    const fadingOut = [];
+    for (const time of [0, 210, 420]) {
+      await page.evaluate(time => {
+        for (const animation of document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal')) animation.currentTime = time;
+      }, time);
+      fadingOut.push(await page.screenshot({ clip, path: `test-results/fade-out-${time}.png` }));
+    }
+    expect(fadingOut[0]).toEqual(highlighted);
+    expect(fadingOut[0].equals(fadingOut[1])).toBe(false);
+    expect(fadingOut[1].equals(fadingOut[2])).toBe(false);
+    expect(fadingOut[2]).toEqual(pixels[0]);
+    await page.evaluate(() => { for (const animation of document.getAnimations()) animation.finish(); });
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(0);
+    await page.evaluate(pauseNextReveal);
+    await popup.getByLabel('Enable automatic highlighting').check();
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal' && a.playState === 'paused').length)).toBeGreaterThan(0);
+    const restored = [];
+    for (const time of [0, 210, 420]) {
+      await page.evaluate(time => {
+        for (const animation of document.getAnimations().filter(a => a instanceof CSSTransition && a.transitionProperty === '--ugh-reveal')) animation.currentTime = time;
+      }, time);
+      restored.push(await page.screenshot({ clip, path: `test-results/fade-cached-${time}.png` }));
+    }
+    expect(restored[0].equals(restored[1])).toBe(false);
+    expect(restored[1].equals(restored[2])).toBe(false);
+    expect(await page.locator('.react-code-lines').innerHTML()).toBe(before);
+  });
+
+  test('reload restores cached colors before any plain-code compositor frame', async () => {
+    await page.route('https://github.com/test/repo/blob/main/reload.invented', route => route.fulfill({
+      contentType: 'text/html; charset=utf-8',
+      headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'" },
+      body: '<!doctype html><style>:root{--color-prettylights-syntax-keyword:#cf222e;color:#1f2328}.react-file-line{white-space:pre;font:14px/24px monospace}</style><main><div class="react-code-lines"><div id="LC1" class="react-file-line">return value</div><div class="react-file-line">return 42</div></div></main>',
+    }));
+    await page.goto('https://github.com/test/repo/blob/main/reload.invented');
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size), { timeout: 25_000 }).toBeGreaterThan(1);
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+    const box = await page.locator('#LC1').evaluate(element => {
+      const range = document.createRange(); range.setStart(element.firstChild!, 0); range.setEnd(element.firstChild!, 6);
+      return range.getBoundingClientRect().toJSON();
+    });
+    const bg = await background();
+    await bg.evaluate(() => {
+      const runtime = chrome.runtime as any, send = runtime.sendMessage.bind(runtime);
+      (globalThis as any).parseCalls = 0;
+      runtime.sendMessage = (message: any, ...args: any[]) => {
+        if (message?.target === 'offscreen' && message.type === 'parse') (globalThis as any).parseCalls++;
+        return send(message, ...args);
+      };
+    });
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Page.enable');
+    const frames: { data: string; time: number }[] = [];
+    cdp.on('Page.screencastFrame', event => {
+      frames.push({ data: event.data, time: event.metadata.timestamp! });
+      void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+    });
+    await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
+    for (let i = 0; i < 2; i++) {
+      await page.reload();
+      await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBeGreaterThan(1);
+      await page.waitForTimeout(100);
+    }
+    await cdp.send('Page.stopScreencast');
+    expect(await bg.evaluate(() => (globalThis as any).parseCalls)).toBe(0);
+    // Decode actual compositor frames after recording, without sampling styles
+    // or pausing animations while the reload is taking place.
+    const decoder = await context.newPage();
+    const samples = await decoder.evaluate(async ({ frames, box }) => {
+      const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d')!;
+      const samples = [];
+      for (const frame of frames) {
+        const image = new Image(); image.src = `data:image/png;base64,${frame.data}`;
+        await image.decode(); canvas.width = image.width; canvas.height = image.height; ctx.drawImage(image, 0, 0);
+        const x = Math.floor(box.x), y = Math.floor(box.y);
+        const pixels = ctx.getImageData(x, y, Math.ceil(box.right) - x, Math.ceil(box.bottom) - y).data;
+        let ink = 0, red = -255;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) < 220) {
+            ink++; red = Math.max(red, pixels[i] - pixels[i + 1]);
+          }
+        }
+        samples.push({ ink, red });
+      }
+      return samples;
+    }, { frames, box });
+    expect(samples.filter(sample => sample.ink > 10).length).toBeGreaterThan(0);
+    expect(samples.filter(sample => sample.ink > 10 && sample.red < 150)).toEqual([]);
+    expect(external).toEqual([]);
+  });
+
+  test('disabled highlighting stays disabled when a previously cached file reloads', async () => {
+    await page.goto('https://github.com/test/repo/blob/main/example.invented');
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size), { timeout: 25_000 }).toBeGreaterThan(1);
+    await openPopup();
+    await popup.getByLabel('Enable automatic highlighting').uncheck();
+    await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(0);
+    await page.reload();
+    await expect(popup.getByLabel('Enable automatic highlighting')).not.toBeChecked();
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => CSS.highlights.size)).toBe(0);
+    expect(await page.evaluate(() => sessionStorage.getItem('ugh-reload'))).toBeNull();
+  });
+
+  test('large files stay highlighted from top to bottom when scrolling', async () => {
+    await page.goto('https://github.com/test/repo/blob/main/large.invented');
+    const before = await page.evaluate(() => {
+      document.querySelector('.file')!.remove();
+      document.querySelector('.markdown-body')!.remove();
+      const root = document.querySelector('.react-code-lines')!;
+      const rows = Array.from({ length: 1800 }, (_, i) => {
+        const row = document.createElement('div');
+        row.className = 'react-file-line'; row.id = `LC${i + 1}`;
+        row.textContent = `let item_${i}: Int = 42 // a long source file remains highlighted`;
+        return row;
+      });
+      root.replaceChildren(...rows);
+      return root.innerHTML;
+    });
+    const covered = () => page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.react-file-line')];
+      const ranges = [...CSS.highlights].flatMap(([, highlight]) => [...highlight]);
+      const nodes = new Set(ranges.map(range => range.startContainer));
+      return rows.filter(row => row.firstChild && nodes.has(row.firstChild)).length;
+    });
+    await expect.poll(covered, { timeout: 25_000 }).toBe(1800);
+    await expect.poll(() => page.locator('[data-ugh-fade]').count()).toBe(0);
+    const sizes = await page.evaluate(() => [...CSS.highlights].map(([type, ranges]) => [type, ranges.size]));
+    const cdp = await context.newCDPSession(page);
+    const frames: string[] = [];
+    cdp.on('Page.screencastFrame', event => {
+      frames.push(event.data);
+      void cdp.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
+    });
+    await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
+    // Actual wheel scrolling can paint intermediate compositor frames that
+    // scrollIntoView + a final screenshot would miss.
+    for (const distance of [480, 480, 480, -480, -480, -480]) {
+      await page.mouse.wheel(0, distance);
+      await page.waitForTimeout(60);
+    }
+    await cdp.send('Page.stopScreencast');
+    const decoder = await context.newPage();
+    const samples = await decoder.evaluate(async frames => {
+      const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d')!;
+      const samples = [];
+      for (const data of frames) {
+        const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+        canvas.width = image.width; canvas.height = image.height; ctx.drawImage(image, 0, 0);
+        // Every row begins with a keyword at the fixture's left margin.
+        const pixels = ctx.getImageData(8, 120, 22, 480).data;
+        let red = -255, ink = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) < 220) {
+            ink++; red = Math.max(red, pixels[i] - pixels[i + 1]);
+          }
+        }
+        samples.push({ ink, red });
+      }
+      return samples;
+    }, frames);
+    await decoder.close();
+    expect(samples.length).toBeGreaterThan(2);
+    expect(samples.filter(sample => sample.ink < 20 || sample.red < 150)).toEqual([]);
+    for (const line of ['#LC900', '#LC1800', '#LC1']) {
+      await page.locator(line).scrollIntoViewIfNeeded();
+      await expect(page.locator(line)).toBeInViewport();
+      expect(await covered()).toBe(1800);
+      expect(await page.locator(line).evaluate(e => getComputedStyle(e, '::highlight(ugh-keyword)').color))
+        .not.toBe(await page.locator(line).evaluate(e => getComputedStyle(e).color));
+    }
+    expect(await page.evaluate(() => [...CSS.highlights].map(([type, ranges]) => [type, ranges.size]))).toEqual(sizes);
+    expect(await page.locator('.react-code-lines').innerHTML()).toBe(before);
+    expect(external).toEqual([]);
+  });
+
   test('content scripts do not need WebGPU; inference runs in the shared worker', async () => {
     const cdp = await context.newCDPSession(page);
     await cdp.send('Runtime.enable');

@@ -1,15 +1,44 @@
 import { TOKEN_TYPES, type Line, type Span, type TokenType } from './types';
+import { Reveal } from './reveal';
+import type { FileSource } from './file-source';
 
 interface Piece { node: Text; start: number; end: number; paint: boolean }
 export interface Snapshot { source: string; pieces: Piece[]; lines: Line[]; texts: string[] }
 
 export function snapshot(lines: Line[]): Snapshot {
+  return snapshotAt(lines);
+}
+
+// Missing rows leave gaps in source offsets, rather than disappearing from
+// the model input. IDs and text must both match before reusing a file result.
+export function snapshotFile(lines: Line[], source: FileSource): Snapshot | undefined {
+  const offsets: number[] = [];
+  const placeholders = new Set<number>();
+  let previous = 0;
+  for (const [i, { element }] of lines.entries()) {
+    const match = /^LC(\d+)$/.exec(element.id);
+    const number = match ? Number(match[1]) : 0;
+    if (number <= previous || number > source.lines.length) return;
+    const text = element.textContent ?? '', expected = source.lines[number - 1];
+    // GitHub mounts an extra newline text node to give an empty code row
+    // height. It is a DOM placeholder, not another newline in the source.
+    if (expected === '' && text === '\n') placeholders.add(i);
+    else if (text !== expected) return;
+    previous = number;
+    offsets.push(source.offsets[number - 1]);
+  }
+  return snapshotAt(lines, offsets, source.text, placeholders);
+}
+
+function snapshotAt(lines: Line[], offsets?: number[], source?: string, placeholders?: Set<number>): Snapshot {
   const pieces: Piece[] = [];
   const texts: string[] = [];
   let offset = 0;
-  for (const { element, paint } of lines) {
+  for (const [i, { element, paint }] of lines.entries()) {
+    if (offsets) offset = offsets[i];
     const text = element.textContent ?? '';
     texts.push(text);
+    if (placeholders?.has(i)) continue;
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     let node: Node | null;
     while ((node = walker.nextNode())) {
@@ -19,7 +48,7 @@ export function snapshot(lines: Line[]): Snapshot {
     }
     offset++; // A synthetic newline between DOM rows; never a DOM modification.
   }
-  return { source: texts.join('\n'), pieces, lines, texts };
+  return { source: source ?? texts.join('\n'), pieces, lines, texts };
 }
 
 export function isCurrent(value: Snapshot): boolean {
@@ -27,7 +56,7 @@ export function isCurrent(value: Snapshot): boolean {
     && value.pieces.every(p => p.node.isConnected);
 }
 
-export type Ranges = Map<TokenType, Range[]>;
+export type Ranges = Map<TokenType, StaticRange[]>;
 
 export function makeRanges(value: Snapshot, spans: Span[]): Ranges {
   // Reject bad model output as a whole, rather than rendering partial corruption.
@@ -50,9 +79,11 @@ export function makeRanges(value: Snapshot, spans: Span[]): Ranges {
       const start = Math.max(span.start, piece.start) - piece.start;
       const end = Math.min(span.end, piece.end) - piece.start;
       if (start >= end) continue;
-      const range = document.createRange();
-      range.setStart(piece.node, start);
-      range.setEnd(piece.node, end);
+      // Live Range endpoints jump to the parent when GitHub unmounts a row,
+      // even if it reinserts that same text node. StaticRange keeps the model's
+      // node/offset mapping intact across virtualization and node moves.
+      const range = new StaticRange({ startContainer: piece.node, startOffset: start,
+        endContainer: piece.node, endOffset: end });
       const ranges = result.get(span.type) ?? [];
       ranges.push(range);
       result.set(span.type, ranges);
@@ -63,11 +94,42 @@ export function makeRanges(value: Snapshot, spans: Span[]): Ranges {
 
 export class Painter {
   private layers = new Map<Element, Ranges>();
+  private lines = new Map<Element, Element[]>();
+  private reveal = new Reveal();
   supported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined';
 
-  set(root: Element, ranges: Ranges): void { this.layers.set(root, ranges); this.commit(); }
-  remove(root: Element): void { if (this.layers.delete(root)) this.commit(); }
-  clear(): void { this.layers.clear(); this.commit(); }
+  set(root: Element, ranges: Ranges, revealLines?: Element[], animate = true): void {
+    if (revealLines) this.reveal.start(root, revealLines, animate);
+    else this.reveal.cancel(root);
+    this.layers.set(root, ranges);
+    if (revealLines) this.lines.set(root, revealLines);
+    else this.lines.delete(root);
+    this.commit();
+  }
+  move(from: Element, to: Element): void {
+    const ranges = this.layers.get(from);
+    this.layers.delete(from);
+    if (ranges) this.layers.set(to, ranges);
+    const lines = this.lines.get(from);
+    this.lines.delete(from);
+    if (lines) this.lines.set(to, lines);
+    this.reveal.move(from, to);
+    // The caller rebinds cloned text ranges in this same scan. If React moved
+    // the original text nodes, their existing ranges are already correct.
+  }
+  remove(root: Element): void {
+    this.reveal.cancel(root); this.lines.delete(root);
+    if (this.layers.delete(root)) this.commit();
+  }
+  clear(fade = false): void {
+    for (const root of [...this.layers.keys()]) {
+      if (fade && this.lines.has(root)) {
+        this.reveal.hide(root, this.lines.get(root)!, () => {
+          this.layers.delete(root); this.lines.delete(root); this.commit();
+        });
+      } else this.remove(root);
+    }
+  }
   private commit(): void {
     if (!this.supported) return;
     for (const type of TOKEN_TYPES) {

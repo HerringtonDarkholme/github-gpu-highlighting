@@ -1,10 +1,38 @@
 /* Only foreground colors. Never touch GitHub's diff/search/selection backgrounds. */
-::highlight(ugh-plain) { color: var(--fgColor-default, var(--color-fg-default, #1f2328)); }
-::highlight(ugh-comment) { color: var(--color-prettylights-syntax-comment, var(--fgColor-muted, #59636e)); }
-::highlight(ugh-string) { color: var(--color-prettylights-syntax-string, #0a3069); }
-::highlight(ugh-number) { color: var(--color-prettylights-syntax-constant, #0550ae); }
-::highlight(ugh-keyword) { color: var(--color-prettylights-syntax-keyword, #cf222e); }
-::highlight(ugh-type) { color: var(--color-prettylights-syntax-entity, #6639ba); }
-::highlight(ugh-function) { color: var(--color-prettylights-syntax-entity, #6639ba); }
-::highlight(ugh-constant) { color: var(--color-prettylights-syntax-constant, #0550ae); }
-::highlight(ugh-operator) { color: var(--color-prettylights-syntax-keyword, #cf222e); }
+@property --ugh-reveal {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+[data-ugh-fade="prepare"] { transition: none; }
+[data-ugh-fade="active"] {
+  transition: --ugh-reveal var(--ugh-fade-duration, 420ms) linear;
+}
+
+::highlight(ugh-plain) { --ugh-token-color: var(--fgColor-default, var(--color-fg-default, #1f2328)); color: var(--ugh-token-color); }
+::highlight(ugh-comment) { --ugh-token-color: var(--color-prettylights-syntax-comment, var(--fgColor-muted, #59636e)); color: var(--ugh-token-color); }
+::highlight(ugh-string) { --ugh-token-color: var(--color-prettylights-syntax-string, #0a3069); color: var(--ugh-token-color); }
+::highlight(ugh-number) { --ugh-token-color: var(--color-prettylights-syntax-constant, #0550ae); color: var(--ugh-token-color); }
+::highlight(ugh-keyword) { --ugh-token-color: var(--color-prettylights-syntax-keyword, #cf222e); color: var(--ugh-token-color); }
+::highlight(ugh-type) { --ugh-token-color: var(--color-prettylights-syntax-entity, #6639ba); color: var(--ugh-token-color); }
+::highlight(ugh-function) { --ugh-token-color: var(--color-prettylights-syntax-entity, #6639ba); color: var(--ugh-token-color); }
+::highlight(ugh-constant) { --ugh-token-color: var(--color-prettylights-syntax-constant, #0550ae); color: var(--ugh-token-color); }
+::highlight(ugh-operator) { --ugh-token-color: var(--color-prettylights-syntax-keyword, #cf222e); color: var(--ugh-token-color); }
+
+@supports (color: color-mix(in srgb, black, white)) {
+  ::highlight(ugh-plain), ::highlight(ugh-comment), ::highlight(ugh-string),
+  ::highlight(ugh-number), ::highlight(ugh-keyword), ::highlight(ugh-type),
+  ::highlight(ugh-function), ::highlight(ugh-constant), ::highlight(ugh-operator) {
+    color: color-mix(in srgb, var(--ugh-from-color, currentColor) calc((1 - var(--ugh-reveal, 1)) * 100%), var(--ugh-token-color) calc(var(--ugh-reveal, 1) * 100%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ugh-fade] { transition: none; }
+  ::highlight(ugh-plain), ::highlight(ugh-comment), ::highlight(ugh-string),
+  ::highlight(ugh-number), ::highlight(ugh-keyword), ::highlight(ugh-type),
+  ::highlight(ugh-function), ::highlight(ugh-constant), ::highlight(ugh-operator) {
+    color: var(--ugh-token-color);
+  }
+}

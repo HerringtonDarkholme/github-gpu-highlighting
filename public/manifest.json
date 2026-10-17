@@ -27,7 +27,7 @@
     "matches": ["https://github.com/*"],
     "js": ["content.js"],
     "css": ["content.css"],
-    "run_at": "document_end",
+    "run_at": "document_start",
     "world": "ISOLATED"
   }],
   "content_security_policy": {

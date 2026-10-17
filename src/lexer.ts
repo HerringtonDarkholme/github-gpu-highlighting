@@ -1,19 +1,34 @@
 import { parseInBackground } from './protocol';
+import type { CachedResult } from './protocol';
 import { MAX_SOURCE } from './limits';
 import type { Span } from './types';
 
 export type Parse = (source: string) => Promise<Span[]>;
 export { MAX_SOURCE } from './limits';
 
-// Keep result caching in the page. Only the shared worker imports gpu-lexer.
+// The page owns its working cache; a few recent results can be seeded on reload.
+// Only the shared worker imports gpu-lexer.
 export class Lexer {
   private cache = new Map<string, { promise: Promise<Span[]>; spans?: Span[] }>();
   private tail: Promise<unknown> = Promise.resolve();
   private generation = 0;
+  private restored = new Set<string>();
   failure = '';
   constructor(private parseSource: Parse = parseInBackground, private available = () => true, private timeoutMs = 30_000) {}
 
   cached(source: string): Span[] | undefined { return this.cache.get(source)?.spans; }
+  restoredBeforePaint(source: string): boolean { return this.restored.has(source); }
+  completed(): CachedResult[] {
+    return [...this.cache].flatMap(([source, value]) => value.spans ? [{ source, spans: value.spans }] : []);
+  }
+  seed(entries: CachedResult[], beforePaint = false): void {
+    for (const entry of entries.slice(0, 4)) {
+      const { source, spans } = entry ?? {};
+      if (typeof source !== 'string' || !Array.isArray(spans) || source.length > MAX_SOURCE || this.cache.has(source)) continue;
+      this.cache.set(source, { spans, promise: Promise.resolve(spans) });
+      if (beforePaint) this.restored.add(source);
+    }
+  }
   retry(): void {
     this.generation++;
     this.failure = '';

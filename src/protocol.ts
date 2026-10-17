@@ -1,6 +1,8 @@
 import type { Span } from './types';
 
 export interface LexerReply { spans?: Span[]; error?: string }
+export interface CachedResult { source: string; spans: Span[] }
+export interface BootstrapReply { enabled: boolean; cache: CachedResult[] }
 
 export async function parseInBackground(source: string): Promise<Span[]> {
   const reply: LexerReply = await chrome.runtime.sendMessage({ target: 'background', type: 'parse', source });

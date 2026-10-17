@@ -1,1 +1,1 @@
-export const MAX_SOURCE = 60_000;
+export const MAX_SOURCE = 120_000;

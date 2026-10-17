@@ -1,4 +1,5 @@
-import { IDLE_ALARM, RuntimeHost } from './runtime-host';
+import { IDLE_ALARM, isGitHub, RuntimeHost } from './runtime-host';
+import { readResults, rememberResult } from './result-cache';
 
 const host = new RuntimeHost();
 const sync = () => { void host.sync().catch(() => {}); };
@@ -16,8 +17,18 @@ chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === IDLE_ALARM) void host.idle(alarm).catch(() => {});
 });
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (message?.target !== 'background' || message.type !== 'parse') return;
-  void host.parse(message.source, sender).then(respond);
+  if (message?.target !== 'background') return;
+  if (message.type === 'bootstrap' && sender.tab && isGitHub(sender.url)) {
+    void Promise.all([chrome.storage.local.get('enabled'), readResults()]).then(([settings, cache]) => {
+      respond({ enabled: settings.enabled !== false, cache });
+    }, () => respond({ enabled: true, cache: [] }));
+    return true;
+  }
+  if (message.type !== 'parse') return;
+  void host.parse(message.source, sender).then(async reply => {
+    if (reply.spans) await rememberResult({ source: message.source, spans: reply.spans });
+    respond(reply);
+  });
   return true;
 });
 chrome.runtime.onStartup.addListener(sync);

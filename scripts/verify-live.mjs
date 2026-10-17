@@ -40,13 +40,28 @@ try {
   assert.equal(nativeTokens, 0, 'Choose a source file GitHub does not already highlight');
   await wait(async () => (await painted()).length > 1);
   assert.equal(await page.locator('.react-code-lines').textContent(), originalText);
+  // GitHub renders code below the fold too. Those ranges must already be
+  // installed, without requiring another inference when they become visible.
+  const scrollLines = await page.locator('.react-file-line').evaluateAll(rows => {
+    const nonempty = rows.filter(row => row.textContent.trim());
+    return [nonempty[Math.floor(nonempty.length / 2)].id, nonempty.at(-1).id, nonempty[0].id];
+  });
+  for (const id of scrollLines) {
+    const line = page.locator(`[id="${id}"]`);
+    await line.scrollIntoViewIfNeeded();
+    await wait(() => line.evaluate(element => [...CSS.highlights].some(([, ranges]) =>
+      [...ranges].some(range => element.contains(range.startContainer) && range.startContainer.textContent.slice(range.startOffset, range.endOffset).trim()))));
+    // Let GitHub reveal any content-visibility sections before the next scroll
+    // or screenshot; range membership alone doesn't mean it has painted yet.
+    await page.waitForTimeout(250);
+  }
   await page.screenshot({ path: 'test-results/live-unknown-light.png' });
   await page.evaluate(() => {
     document.documentElement.setAttribute('data-color-mode', 'dark');
     document.documentElement.setAttribute('data-dark-theme', 'dark');
   });
   await page.screenshot({ path: 'test-results/live-unknown-dark.png' });
-  results.push({ surface: 'unknown source', url: page.url(), nativeTokens, textPreserved: true, highlights: await painted() });
+  results.push({ surface: 'unknown source', url: page.url(), nativeTokens, textPreserved: true, scrollLines, highlights: await painted() });
 
   // This click uses GitHub's React router rather than page.goto/reloading.
   const nextPath = '/HerringtonDarkholme/hd-lang/blob/main/lib/std/sys.hd';
@@ -59,6 +74,21 @@ try {
     await wait(async () => (await painted()).length > 1);
     assert.equal(await page.evaluate(() => window.__liveDocument), true, 'Navigation unexpectedly reloaded');
     results.push({ surface: 'client navigation', url: page.url(), documentRetained: true, highlights: await painted() });
+  }
+
+  if (unknown.includes('/vercel-labs/zerolang/')) {
+    await page.evaluate(() => { window.__liveDocument = true; });
+    for (const file of ['regex.0', 'cli.0']) {
+      await page.getByRole('treeitem', { name: file, exact: true }).click();
+      await page.waitForURL(`**/std/${file}`);
+      await wait(() => page.evaluate(() => {
+        const root = document.querySelector('.react-code-lines');
+        return [...CSS.highlights].some(([type, ranges]) => type !== 'ugh-plain'
+          && [...ranges].some(range => root?.contains(range.startContainer) && range.startContainer.textContent.slice(range.startOffset, range.endOffset).trim()));
+      }));
+      assert.equal(await page.evaluate(() => window.__liveDocument), true, 'Navigation unexpectedly reloaded');
+      results.push({ surface: 'zerolang client navigation', url: page.url(), documentRetained: true, highlights: await painted() });
+    }
   }
 
   await page.goto('https://github.com/vercel-labs/gpu-lexer/blob/main/packages/core/src/index.js');

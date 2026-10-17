@@ -8,6 +8,8 @@ test.beforeAll(async () => {
   harness = (await build({ entryPoints: ['tests/harness.ts'], bundle: true, write: false, format: 'iife', target: 'chrome120' })).outputFiles[0].text;
 });
 test.beforeEach(async ({ page }) => {
+  // These tests inspect final foreground colors; animation is tested separately.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.route('https://github.com/**', route => route.fulfill({ body: fixture, contentType: 'text/html' }));
   await page.goto('https://github.com/test/repo/blob/main/example.invented');
   await page.addStyleTag({ path: 'public/content.css' });
@@ -35,7 +37,7 @@ test('UTF-16 spans cross nested text nodes and synthetic newlines without changi
     const value = api.snapshot([{ element: first, paint: true }, { element: second, paint: true }]);
     const ranges = api.makeRanges(value, [{ type: 'string', start: 1, end: 8 }]);
     new api.Painter().set(first, ranges);
-    return { source: value.source, selected: ranges.get('string').map((r: Range) => r.toString()), same: before === first.outerHTML + second.outerHTML };
+    return { source: value.source, selected: ranges.get('string').map((r: StaticRange) => r.startContainer.textContent!.slice(r.startOffset, r.endOffset)), same: before === first.outerHTML + second.outerHTML };
   });
   expect(result).toEqual({ source: 'a😀é\n"<script>"', selected: ['😀', 'é', '"<'], same: true });
 });
@@ -169,6 +171,66 @@ test('toggle cancels in-flight work, re-enabling uses cached spans, and pagehide
   await expect.poll(() => page.evaluate(() => CSS.highlights.size)).toBe(1);
 });
 
+test('navigation recovers when GitHub replaces the observed container after its navigation event', async ({ page }) => {
+  await page.evaluate(() => (window as any).testApi.start());
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  await page.evaluate(() => {
+    history.pushState(null, '', '/test/repo/blob/main/cli.0');
+    document.dispatchEvent(new Event('soft-nav:end'));
+  });
+  // The navigation event precedes React's commit, so the controller has already
+  // attached to the old container when GitHub swaps it out.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+  for (const selector of ['#repo-content-pjax-container', 'main']) {
+    await page.evaluate(selector => {
+      const scope = document.createElement('div'); scope.id = 'repo-content-pjax-container';
+      const code = document.createElement('div'); code.className = 'react-code-lines';
+      const line = document.createElement('div'); line.className = 'react-file-line';
+      line.textContent = `invent cli ${selector}`; code.append(line); scope.append(code);
+      const main = document.createElement('main'); main.append(scope);
+      document.querySelector(selector)!.replaceWith(selector === 'main' ? main : scope);
+    }, selector);
+    await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files.map((f: any) => f.state))).toEqual(['Highlighted']);
+    await expect.poll(() => page.evaluate(() => [...CSS.highlights.get('ugh-keyword')!].map(range => range.startContainer.textContent!.slice(range.startOffset, range.endOffset)).join(''))).toContain(`invent cli ${selector}`);
+  }
+  await page.evaluate(() => (window as any).testApi.controller().stop());
+  expect(await page.evaluate(() => CSS.highlights.size)).toBe(0);
+});
+
+test('reusing a text node inside a replacement line does not strand a pending request', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    (window as any).testApi.start({ delay: true });
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.calls().length)).toBe(1);
+  await page.evaluate(() => {
+    const old = document.querySelector('#LC1')!;
+    const line = old.cloneNode(false); line.appendChild(old.firstChild!); old.replaceWith(line);
+  });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+  await page.evaluate(() => (window as any).testApi.release());
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  expect(await page.evaluate(() => [...CSS.highlights.get('ugh-keyword')!].every(range => range.startContainer.isConnected))).toBe(true);
+});
+
+test('a late result cannot restart work after pagehide; pageshow restores cached colors', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    (window as any).testApi.start({ delay: true });
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.calls().length)).toBe(1);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('pagehide'));
+    (window as any).testApi.release();
+  });
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => (window as any).testApi.controller().status().files)).toEqual([]);
+  expect(await page.evaluate(() => CSS.highlights.size)).toBe(0);
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0]?.state)).toBe('Highlighted');
+  expect(await page.evaluate(() => (window as any).testApi.calls().length)).toBe(1);
+});
+
 test('GPU failures leave original source intact and do not retry on mutations', async ({ page }) => {
   const before = await page.locator('main').innerHTML();
   await page.evaluate(() => (window as any).testApi.start({ fail: true }));
@@ -182,7 +244,7 @@ test('GPU failures leave original source intact and do not retry on mutations', 
 test('missing WebGPU and oversized files never invoke the model', async ({ page }) => {
   await page.evaluate(() => {
     document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
-    document.querySelector('#LC1')!.textContent = 'x'.repeat(60_001);
+    document.querySelector('#LC1')!.textContent = 'x'.repeat(120_001);
     (window as any).testApi.start({ unavailable: true });
   });
   expect(await page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Skipped: size limit');
@@ -209,8 +271,12 @@ test('theme switching updates highlight foreground while retaining diff backgrou
   const bg = await page.locator('.blob-code-addition').first().evaluate(e => getComputedStyle(e).backgroundColor);
   await page.evaluate(() => document.documentElement.setAttribute('data-color-mode', 'dark'));
   const dark = await page.locator('#LC1').evaluate(e => getComputedStyle(e, '::highlight(ugh-keyword)').color);
-  expect(light).toBe('rgb(207, 34, 46)');
-  expect(dark).toBe('rgb(255, 123, 114)');
+  const pixels = await page.evaluate(colors => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext('2d')!;
+    return colors.map(color => { ctx.fillStyle = color; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data]; });
+  }, [light, dark]);
+  expect(pixels).toEqual([[207, 34, 46, 255], [255, 123, 114, 255]]);
   expect(await page.locator('.blob-code-addition').first().evaluate(e => getComputedStyle(e).backgroundColor)).toBe(bg);
 });
 
@@ -351,4 +417,124 @@ test('a request from a closed runtime cannot poison a retry, and completed page 
     return { failure: lexer.failure, cached: lexer.cached('cached'), fresh: lexer.cached('fresh') };
   });
   expect(result).toEqual({ failure: '', cached: [{ type: 'keyword', start: 0, end: 6 }], fresh: [{ type: 'keyword', start: 0, end: 5 }] });
+});
+
+test('virtualized file rows reuse full-source offsets, preserve UTF-16 positions and reject mismatched text', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const api = (window as any).testApi;
+    const source = api.fileSource(['first 😀', 'missing row', 'last é']);
+    const rows = [1, 3].map(number => {
+      const element = document.createElement('div'); element.id = `LC${number}`; element.textContent = source.lines[number - 1];
+      return { element, paint: true };
+    });
+    const value = api.snapshotFile(rows, source);
+    const last = source.offsets[2];
+    const selected = api.makeRanges(value, [{ type: 'string', start: 6, end: last + 6 }]).get('string').map((range: StaticRange) => range.startContainer.textContent!.slice(range.startOffset, range.endOffset));
+    rows[1].element.textContent = 'changed';
+    return { source: value.source, lastOffset: value.pieces[1].start, selected, rejected: api.snapshotFile(rows, source) === undefined };
+  });
+  expect(result).toEqual({ source: 'first 😀\nmissing row\nlast é', lastOffset: 21, selected: ['😀', 'last e'], rejected: true });
+});
+
+for (const initiallyPartial of [false, true]) {
+  test(`GitHub row virtualization ${initiallyPartial ? 'starting with a partial DOM' : 'after full-file rendering'} never reparses or returns to Pending`, async ({ page }) => {
+    const source = await page.evaluate(initiallyPartial => {
+      document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+      const root = document.querySelector('.react-code-lines')!;
+      const rawLines = Array.from({ length: 373 }, (_, i) => i % 11 === 4 ? '' : `invent value_${i} => "😀 ${i}"`);
+      (window as any).virtualRows = rawLines.map((text, i) => {
+        const element = document.createElement('div'); element.className = 'react-file-line'; element.id = `LC${i + 1}`; element.textContent = text || '\n'; return element;
+      });
+      const script = document.createElement('script'); script.type = 'application/json'; script.setAttribute('data-target', 'react-app.embeddedData');
+      script.textContent = JSON.stringify({ payload: {
+        codeViewBlobLayoutRoute: { blob: { displayUrl: location.href + '?raw=true', truncated: false } },
+        'codeViewBlobLayoutRoute.StyledBlob': { rawLines },
+      } });
+      document.body.append(script);
+      const rows = (window as any).virtualRows as Element[];
+      root.replaceChildren(...(initiallyPartial ? [...rows.slice(0, 114), ...rows.slice(-115)] : rows));
+      (window as any).testApi.start();
+      return rawLines.join('\n');
+    }, initiallyPartial);
+    await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+    expect(await page.evaluate(() => (window as any).testApi.calls())).toEqual([source]);
+    const results = await page.evaluate(async () => {
+      const root = document.querySelector('.react-code-lines')!, rows = (window as any).virtualRows as Element[], api = (window as any).testApi;
+      const results = [];
+      for (const count of [229, 230, 252, 305, 364, 373, 229]) {
+        // Match the real Edge layout: first and last row remain mounted while
+        // middle rows enter and leave the DOM during scrolling.
+        root.replaceChildren(...rows.slice(0, Math.floor(count / 2)), ...rows.slice(-(count - Math.floor(count / 2))));
+        await new Promise<void>(resolve => queueMicrotask(resolve));
+        const painted = new Set([...CSS.highlights.get('ugh-keyword')!].map(range => range.startContainer));
+        results.push({ count, state: api.controller().status().files[0].state, calls: api.calls().length,
+          covered: [...root.children].every(row => !row.textContent?.trim() || painted.has(row.firstChild!)) });
+      }
+      return results;
+    });
+    expect(results).toEqual([229, 230, 252, 305, 364, 373, 229].map(count => ({ count, state: 'Highlighted', calls: 1, covered: true })));
+  });
+}
+
+test('stale embedded source from another file is ignored, and genuine source edits still reparse', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    const script = document.createElement('script'); script.type = 'application/json'; script.setAttribute('data-target', 'react-app.embeddedData');
+    script.textContent = JSON.stringify({ payload: {
+      codeViewBlobLayoutRoute: { blob: { displayUrl: 'https://github.com/test/repo/blob/other/example.invented?raw=true' } },
+      'codeViewBlobLayoutRoute.StyledBlob': { rawLines: ['wrong file'] },
+    } }); document.body.append(script);
+    (window as any).testApi.start();
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  expect(await page.evaluate(() => (window as any).testApi.calls())).toEqual(['invent greet(name) => "hello 😀"\nyield 42 + name']);
+  await page.locator('#LC2').evaluate(element => { element.textContent = 'yield 999'; });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.calls().length)).toBe(2);
+  expect(await page.evaluate(() => (window as any).testApi.calls()[1])).toBe('invent greet(name) => "hello 😀"\nyield 999');
+});
+
+test('client navigation uses the full read-only textarea when initial embedded data is stale', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    const area = document.createElement('textarea'); area.id = 'read-only-cursor-text-area'; area.setAttribute('aria-readonly', 'true');
+    area.value = 'invent greet(name) => "hello 😀"\nyield 42 + name'; document.body.append(area);
+    const script = document.createElement('script'); script.type = 'application/json'; script.setAttribute('data-target', 'react-app.embeddedData');
+    script.textContent = JSON.stringify({ payload: { codeViewBlobLayoutRoute: { blob: { displayUrl: location.href } },
+      'codeViewBlobLayoutRoute.StyledBlob': { rawLines: area.value.split('\n') } } }); document.body.append(script);
+    (window as any).testApi.start();
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  const source = await page.evaluate(() => {
+    const rawLines = Array.from({ length: 373 }, (_, i) => i % 11 === 4 ? '' : `invent navigated_${i} => "😀 ${i}"`);
+    (document.querySelector('#read-only-cursor-text-area') as HTMLTextAreaElement).value = rawLines.join('\n');
+    (window as any).virtualRows = rawLines.map((text, i) => {
+      const row = document.createElement('div'); row.className = 'react-file-line'; row.id = `LC${i + 1}`; row.textContent = text || '\n'; return row;
+    });
+    const rows = (window as any).virtualRows as Element[];
+    history.pushState(null, '', '/test/repo/blob/main/next.invented');
+    document.querySelector('.react-code-lines')!.replaceChildren(...rows.slice(0, 114), ...rows.slice(-115));
+    document.dispatchEvent(new Event('soft-nav:end'));
+    return rawLines.join('\n');
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Highlighted');
+  expect(await page.evaluate(() => (window as any).testApi.calls()[1])).toBe(source);
+  const result = await page.evaluate(async () => {
+    const rows = (window as any).virtualRows as Element[], root = document.querySelector('.react-code-lines')!;
+    root.replaceChildren(...rows.slice(0, 152), ...rows.slice(-153));
+    await new Promise<void>(resolve => queueMicrotask(resolve));
+    return { calls: (window as any).testApi.calls().length, state: (window as any).testApi.controller().status().files[0].state,
+      covered: [...root.children].every(row => !row.textContent?.trim() || [...CSS.highlights.get('ugh-keyword')!].some(range => range.startContainer === row.firstChild)) };
+  });
+  expect(result).toEqual({ calls: 2, state: 'Highlighted', covered: true });
+});
+
+test('an oversized file stays skipped even when only a small virtualized subset is mounted', async ({ page }) => {
+  await page.evaluate(() => {
+    document.querySelector('.file')!.remove(); document.querySelector('.markdown-body')!.remove();
+    const area = document.createElement('textarea'); area.id = 'read-only-cursor-text-area'; area.setAttribute('aria-readonly', 'true');
+    area.value = 'x'.repeat(120_001); document.body.append(area);
+    (window as any).testApi.start();
+  });
+  expect(await page.evaluate(() => (window as any).testApi.controller().status().files[0].state)).toBe('Skipped: size limit');
+  expect(await page.evaluate(() => (window as any).testApi.calls())).toEqual([]);
 });
